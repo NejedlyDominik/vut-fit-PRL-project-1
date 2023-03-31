@@ -6,13 +6,14 @@
  * year: 2023
  *
  * Main module containing main function performing parallel splitting algorithm
- **/
+ */
 
 #include <mpi.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
 
+// predefined constants
 #define SUCCESS 0
 #define FAIL 1
 
@@ -22,7 +23,16 @@
 #define INPUT_FILE "numbers"
 
 
-void concatSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int subSeqLen, int size, int rank) {
+/**
+ * Join all subsequences split among all processes and print the resulting sequence with the specified output prefix.
+ *
+ * @param  resMsgPrefix  output prefix
+ * @param  subSeqPtr     subsequence
+ * @param  subSeqLen     length of subsequence
+ * @param  size          number of processes
+ * @param  rank          process number
+ */
+void joinSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int subSeqLen, int size, int rank) {
     int seqLen, shift;
     std::vector<int> recvcounts;
     std::vector<int> displs;
@@ -32,23 +42,30 @@ void concatSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int 
         displs.resize(size);
     }
 
+    // Get the total number of elements in all subsequences.
     MPI_Reduce(&subSeqLen, &seqLen, 1, MPI_INT, MPI_SUM, ROOT_PROC, MPI_COMM_WORLD);
+    // Get the numbers of elements in all subsequences.
     MPI_Gather(&subSeqLen, 1, MPI_INT, recvcounts.data(), 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
+    // Compute shift in the resulting sequence for every process.
     MPI_Exscan(&subSeqLen, &shift, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    // Get shifts in the resulting sequence of all processes.
     MPI_Gather(&shift, 1, MPI_INT, displs.data(), 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
 
     std::vector<uint8_t> resSeq;
 
     if(rank == ROOT_PROC) {
+        // Set shift for process 0 to 0 (according to behaviour of MPI_Exscan it is undefined).
         displs.at(0) = 0;
         resSeq.resize(seqLen);
     }
 
+    // Get the resulting sequence.
     MPI_Gatherv(subSeqPtr, subSeqLen, MPI_UINT8_T, resSeq.data(), recvcounts.data(),
         displs.data(), MPI_UINT8_T, ROOT_PROC, MPI_COMM_WORLD);
 
+    // Print the resulting sequence with the specified output prefix.
     if(rank == ROOT_PROC) {
-        std::cout << resMsgPrefix << "{";
+        std::cout << resMsgPrefix << "[";
 
         if(!resSeq.empty()) {
             std::cout << (unsigned) resSeq.front();
@@ -58,7 +75,7 @@ void concatSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int 
             }
         }
 
-        std::cout << "}\n";
+        std::cout << "]\n";
     }
 }
 
@@ -71,10 +88,9 @@ int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    // Load numbers from input file and get pseudo median (middle element of input sequence) and subsequence length.
     if(rank == ROOT_PROC) {
         std::ifstream inFile(INPUT_FILE, std::ios::binary);
-
-        MPI_Comm_size(MPI_COMM_WORLD, &size);
 
         if(!inFile.is_open()) {
             std::cerr << "Input file " << INPUT_FILE << " cannot be opened.\n";
@@ -95,10 +111,12 @@ int main(int argc, char **argv) {
             std::cerr << "Empty input sequence of numbers.\n";
             MPI_Abort(MPI_COMM_WORLD, FAIL);
         }
+
+        MPI_Comm_size(MPI_COMM_WORLD, &size);
         
         if (numbersLen % size != 0) {
-            std::cerr << "The number of elements in the input sequence of numbers "
-                "is not divisible without remainder by the number of processes.\n";
+            std::cerr << "The number of elements (" << numbersLen << ") in the input sequence of numbers "
+                "is not divisible without remainder by the number of processes (" << size << ").\n";
             MPI_Abort(MPI_COMM_WORLD, FAIL);
         }
 
@@ -107,11 +125,13 @@ int main(int argc, char **argv) {
         pseudoMedian = numbers.at(pseudoMedianIdx);
     }
 
+    // Broadcast subsequence length and selected pseudo median to all processes.
     MPI_Bcast(&subSeqNumsLen, 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
     MPI_Bcast(&pseudoMedian, 1, MPI_UINT8_T, ROOT_PROC, MPI_COMM_WORLD);
 
     std::vector<uint8_t> subSeqNumbers(subSeqNumsLen);
 
+    // Split the input sequence among all processes.
     MPI_Scatter(numbers.data(), subSeqNumsLen, MPI_UINT8_T, subSeqNumbers.data(),
         subSeqNumsLen, MPI_UINT8_T, ROOT_PROC, MPI_COMM_WORLD);
 
@@ -119,6 +139,7 @@ int main(int argc, char **argv) {
     std::vector<uint8_t> subSeqEqual;
     std::vector<uint8_t> subSeqGreater;
 
+    // Sort the assigned subsequence by the pseudo median.
     for(uint8_t num: subSeqNumbers) {
         if(num < pseudoMedian) {
             subSeqLower.push_back(num);
@@ -131,9 +152,10 @@ int main(int argc, char **argv) {
         }
     }
 
-    concatSubSeqsAndPrintRes("L: ", subSeqLower.data(), subSeqLower.size(), size, rank);
-    concatSubSeqsAndPrintRes("E: ", subSeqEqual.data(), subSeqEqual.size(), size, rank);
-    concatSubSeqsAndPrintRes("G: ", subSeqGreater.data(), subSeqGreater.size(), size, rank);
+    // Print the resulting distribution.
+    joinSubSeqsAndPrintRes("L: ", subSeqLower.data(), subSeqLower.size(), size, rank);
+    joinSubSeqsAndPrintRes("E: ", subSeqEqual.data(), subSeqEqual.size(), size, rank);
+    joinSubSeqsAndPrintRes("G: ", subSeqGreater.data(), subSeqGreater.size(), size, rank);
 
     MPI_Finalize();
     return SUCCESS;
