@@ -8,7 +8,7 @@ else
 fi;
 
 #preklad cpp zdrojaku
-mpic++ --prefix /usr/local/share/OpenMPI -o parsplit parsplit.c
+mpic++ --prefix /usr/local/share/OpenMPI -o parsplit parsplit.cpp
 
 
 #vyrobeni souboru s random cisly
