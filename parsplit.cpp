@@ -21,7 +21,7 @@
 #define ROOT_PROC 0
 #define BYTE_SIZE 1
 #define MIN_NUM_OF_IN_NUMS 8
-#define INPUT_FILE "numbers"
+#define INPUT_FILE "numbers2"
 
 
 /**
@@ -39,8 +39,8 @@ void joinSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int su
     int *displs = NULL;
 
     if(rank == ROOT_PROC) {
-        recvcounts = (int*) malloc(size * sizeof(int));
-        displs = (int*) malloc(size * sizeof(int));
+        recvcounts = (int*) std::malloc(size * sizeof(int));
+        displs = (int*) std::malloc(size * sizeof(int));
     }
 
     // Get the total number of elements in all subsequences.
@@ -57,7 +57,7 @@ void joinSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int su
     if(rank == ROOT_PROC) {
         // Set shift for process 0 to 0 (according to behaviour of MPI_Exscan it is undefined).
         displs[0] = 0;
-        resSeq = (uint8_t*) malloc(resSeqLen);
+        resSeq = (uint8_t*) std::malloc(resSeqLen);
     }
 
     // Get the resulting sequence.
@@ -80,9 +80,9 @@ void joinSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int su
     }
 
     if(rank == ROOT_PROC) {
-        free(recvcounts);
-        free(displs);
-        free(resSeq);
+        std::free(recvcounts);
+        std::free(displs);
+        std::free(resSeq);
     }
 }
 
@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
     MPI_Bcast(&subSeqNumsLen, 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
     MPI_Bcast(&pseudoMedian, 1, MPI_UINT8_T, ROOT_PROC, MPI_COMM_WORLD);
 
-    uint8_t *subSeqNumbers =(uint8_t*) malloc(subSeqNumsLen);
+    uint8_t *subSeqNumbers =(uint8_t*) std::malloc(subSeqNumsLen);
 
     // Split the input sequence among all processes.
     MPI_Scatter(numbers.data(), subSeqNumsLen, MPI_UINT8_T, subSeqNumbers,
@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
     joinSubSeqsAndPrintRes("G: ", subSeqGreater.data(), subSeqGreater.size(), size, rank);
 
     if(rank == ROOT_PROC) {
-        free(subSeqNumbers);
+        std::free(subSeqNumbers);
     }
 
     MPI_Finalize();
