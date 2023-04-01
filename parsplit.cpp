@@ -12,6 +12,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <cstdlib>
 
 // predefined constants
 #define SUCCESS 0
@@ -33,49 +34,55 @@
  * @param  rank          process number
  */
 void joinSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int subSeqLen, int size, int rank) {
-    int seqLen, shift;
-    std::vector<int> recvcounts;
-    std::vector<int> displs;
+    int resSeqLen, shift;
+    int *recvcounts = NULL;
+    int *displs = NULL;
 
     if(rank == ROOT_PROC) {
-        recvcounts.resize(size);
-        displs.resize(size);
+        recvcounts = (int*) malloc(size * sizeof(int));
+        displs = (int*) malloc(size * sizeof(int));
     }
 
     // Get the total number of elements in all subsequences.
-    MPI_Reduce(&subSeqLen, &seqLen, 1, MPI_INT, MPI_SUM, ROOT_PROC, MPI_COMM_WORLD);
+    MPI_Reduce(&subSeqLen, &resSeqLen, 1, MPI_INT, MPI_SUM, ROOT_PROC, MPI_COMM_WORLD);
     // Get the numbers of elements in all subsequences.
-    MPI_Gather(&subSeqLen, 1, MPI_INT, recvcounts.data(), 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
+    MPI_Gather(&subSeqLen, 1, MPI_INT, recvcounts, 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
     // Compute shift in the resulting sequence for every process.
     MPI_Exscan(&subSeqLen, &shift, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
     // Get shifts in the resulting sequence of all processes.
-    MPI_Gather(&shift, 1, MPI_INT, displs.data(), 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
+    MPI_Gather(&shift, 1, MPI_INT, displs, 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
 
-    std::vector<uint8_t> resSeq;
+    uint8_t *resSeq = NULL;
 
     if(rank == ROOT_PROC) {
         // Set shift for process 0 to 0 (according to behaviour of MPI_Exscan it is undefined).
-        displs.at(0) = 0;
-        resSeq.resize(seqLen);
+        displs[0] = 0;
+        resSeq = (uint8_t*) malloc(resSeqLen);
     }
 
     // Get the resulting sequence.
-    MPI_Gatherv(subSeqPtr, subSeqLen, MPI_UINT8_T, resSeq.data(), recvcounts.data(),
-        displs.data(), MPI_UINT8_T, ROOT_PROC, MPI_COMM_WORLD);
+    MPI_Gatherv(subSeqPtr, subSeqLen, MPI_UINT8_T, resSeq, recvcounts,
+        displs, MPI_UINT8_T, ROOT_PROC, MPI_COMM_WORLD);
 
     // Print the resulting sequence with the specified output prefix.
     if(rank == ROOT_PROC) {
         std::cout << resMsgPrefix << "[";
 
-        if(!resSeq.empty()) {
-            std::cout << (unsigned) resSeq.front();
+        if(resSeqLen != 0) {
+            std::cout << (unsigned) resSeq[0];
 
-            for(std::vector<uint8_t>::iterator numIt = ++resSeq.begin(); numIt != resSeq.end(); ++numIt) {
-                std::cout << ", " << (unsigned) *numIt;
+            for(int i = 1; i < resSeqLen; i++) {
+                std::cout << ", " << (unsigned) resSeq[i];
             }
         }
 
         std::cout << "]\n";
+    }
+
+    if(rank == ROOT_PROC) {
+        free(recvcounts);
+        free(displs);
+        free(resSeq);
     }
 }
 
@@ -129,10 +136,10 @@ int main(int argc, char **argv) {
     MPI_Bcast(&subSeqNumsLen, 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
     MPI_Bcast(&pseudoMedian, 1, MPI_UINT8_T, ROOT_PROC, MPI_COMM_WORLD);
 
-    std::vector<uint8_t> subSeqNumbers(subSeqNumsLen);
+    uint8_t *subSeqNumbers =(uint8_t*) malloc(subSeqNumsLen);
 
     // Split the input sequence among all processes.
-    MPI_Scatter(numbers.data(), subSeqNumsLen, MPI_UINT8_T, subSeqNumbers.data(),
+    MPI_Scatter(numbers.data(), subSeqNumsLen, MPI_UINT8_T, subSeqNumbers,
         subSeqNumsLen, MPI_UINT8_T, ROOT_PROC, MPI_COMM_WORLD);
 
     std::vector<uint8_t> subSeqLower;
@@ -140,7 +147,9 @@ int main(int argc, char **argv) {
     std::vector<uint8_t> subSeqGreater;
 
     // Sort the assigned subsequence by the pseudo median.
-    for(uint8_t num: subSeqNumbers) {
+    for(int i = 0; i < subSeqNumsLen; i++) {
+        uint8_t num = subSeqNumbers[i];
+
         if(num < pseudoMedian) {
             subSeqLower.push_back(num);
         }
@@ -156,6 +165,10 @@ int main(int argc, char **argv) {
     joinSubSeqsAndPrintRes("L: ", subSeqLower.data(), subSeqLower.size(), size, rank);
     joinSubSeqsAndPrintRes("E: ", subSeqEqual.data(), subSeqEqual.size(), size, rank);
     joinSubSeqsAndPrintRes("G: ", subSeqGreater.data(), subSeqGreater.size(), size, rank);
+
+    if(rank == ROOT_PROC) {
+        free(subSeqNumbers);
+    }
 
     MPI_Finalize();
     return SUCCESS;
