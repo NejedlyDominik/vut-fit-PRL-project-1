@@ -21,7 +21,7 @@
 #define ROOT_PROC 0
 #define BYTE_SIZE 1
 #define MIN_NUM_OF_IN_NUMS 8
-#define INPUT_FILE "numbers2"
+#define INPUT_FILE "numbers"
 
 
 /**
