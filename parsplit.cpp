@@ -43,8 +43,6 @@ void joinSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int su
         displs = (int*) std::malloc(size * sizeof(int));
     }
 
-    // Get the total number of elements in all subsequences.
-    MPI_Reduce(&subSeqLen, &resSeqLen, 1, MPI_INT, MPI_SUM, ROOT_PROC, MPI_COMM_WORLD);
     // Get the numbers of elements in all subsequences.
     MPI_Gather(&subSeqLen, 1, MPI_INT, recvcounts, 1, MPI_INT, ROOT_PROC, MPI_COMM_WORLD);
     // Compute shift in the resulting sequence for every process.
@@ -57,6 +55,8 @@ void joinSubSeqsAndPrintRes(std::string resMsgPrefix, uint8_t *subSeqPtr, int su
     if(rank == ROOT_PROC) {
         // Set shift for process 0 to 0 (according to behaviour of MPI_Exscan it is undefined).
         displs[0] = 0;
+        // Get the total number of elements in all subsequences.
+        resSeqLen = displs[size - 1] + recvcounts[size - 1];
         resSeq = (uint8_t*) std::malloc(resSeqLen);
     }
 
